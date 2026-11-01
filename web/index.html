@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>k-Center simulator — Delaunay, seeding, outliers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --surface:#EAEDE7; --panel:#F7F8F5; --ink:#1B2A2F; --graphite:#7D8B8A;
+  --line:#C9D2CD; --signal:#C3352B; --amber:#D98A1F; --keep:#2F6F5E;
+  --sans:'Archivo','Helvetica Neue',Helvetica,Arial,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;background:var(--surface);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.5;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:28px 28px;background-position:-1px -1px;
+}
+.wrap{max-width:1240px;margin:0 auto;padding:28px 20px 72px}
+
+header{margin-bottom:22px;border-bottom:2px solid var(--ink);padding-bottom:14px}
+h1{font-size:clamp(1.55rem,3.4vw,2.3rem);font-weight:700;letter-spacing:-.02em;margin:0 0 6px}
+header p{margin:0;max-width:62ch;color:#3d4f55}
+
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 322px;gap:18px;align-items:start}
+@media (max-width:920px){.stage{grid-template-columns:1fr}}
+
+.board{background:var(--panel);border:1.5px solid var(--ink);position:relative}
+canvas{display:block;width:100%;height:auto;touch-action:manipulation}
+.readout{
+  display:flex;flex-wrap:wrap;gap:0;border-top:1.5px solid var(--ink);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;
+}
+.readout div{flex:1 1 0;min-width:96px;padding:9px 12px;border-right:1px solid var(--line)}
+.readout div:last-child{border-right:0}
+.readout b{display:block;font-size:1.22rem;font-weight:600;letter-spacing:-.01em}
+.readout span{font-family:var(--sans);font-size:.72rem;color:var(--graphite)}
+#mRadius{color:var(--signal)}
+#mDropped{color:var(--amber)}
+
+.rail{background:var(--panel);border:1.5px solid var(--ink);padding:16px;
+      max-height:none;position:sticky;top:12px}
+@media (max-width:920px){.rail{position:static}}
+.rail h2{font-size:.82rem;font-weight:600;margin:0 0 9px;color:var(--graphite)}
+.rail section+section{margin-top:17px;padding-top:15px;border-top:1px solid var(--line)}
+
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{
+  font:inherit;font-size:.79rem;padding:5px 9px;background:transparent;color:var(--ink);
+  border:1px solid var(--graphite);cursor:pointer;line-height:1.2;
+}
+.chip:hover{background:#e3e8e2}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.chip:focus-visible,select:focus-visible,input:focus-visible,button:focus-visible{
+  outline:2px solid var(--signal);outline-offset:2px}
+
+label.row{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:.82rem;margin:11px 0 3px}
+label.row output{font-family:var(--mono);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--ink);margin:0}
+select{width:100%;font:inherit;font-size:.84rem;padding:6px 8px;
+  border:1px solid var(--graphite);background:var(--panel);color:var(--ink)}
+
+.toggles{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:.81rem}
+.toggles label{display:flex;gap:6px;align-items:center;cursor:pointer}
+input[type=checkbox]{accent-color:var(--ink);margin:0}
+
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.btn{font:inherit;font-size:.85rem;font-weight:500;padding:9px;cursor:pointer;
+  border:1.5px solid var(--ink);background:var(--panel);color:var(--ink)}
+.btn:hover{background:#e3e8e2}
+.btn.primary{background:var(--ink);color:var(--panel)}
+.btn.primary:hover{background:#2c4148}
+.btn.wide{grid-column:1/-1}
+
+#log{font-family:var(--mono);font-size:.735rem;line-height:1.45;
+  max-height:172px;overflow-y:auto;border:1px solid var(--line);
+  background:#fff;padding:8px}
+#log p{margin:0 0 3px}
+#log .c{color:var(--signal)}
+#log .m{color:var(--graphite)}
+
+.notes{margin-top:26px;background:var(--panel);border:1.5px solid var(--ink);padding:20px 22px}
+.notes h2{font-size:1.06rem;margin:0 0 4px}
+.notes>p{margin:0 0 16px;max-width:70ch;color:#3d4f55;font-size:.92rem}
+table{width:100%;border-collapse:collapse;font-size:.845rem}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.73rem;color:var(--graphite);font-weight:600;border-bottom:1.5px solid var(--ink)}
+td.cx{font-family:var(--mono);font-size:.8rem;white-space:nowrap}
+tr.hi td{background:#e6ece6}
+.legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:18px;font-size:.79rem;
+  padding-top:14px;border-top:1px solid var(--line)}
+.legend i{display:inline-block;width:13px;height:13px;margin-right:6px;
+  vertical-align:-2px;font-style:normal}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>k-Center, built on one Delaunay triangulation</h1>
+  <p>Place k facilities so the farthest customer is as close as possible. Step through
+     Gonzalez's greedy rule and watch where each center lands — then change the first
+     point, or let the triangulation throw the outliers out.</p>
+</header>
+
+<div class="stage">
+  <div class="board">
+    <canvas id="cv" width="760" height="560"></canvas>
+    <div class="readout">
+      <div><b id="mRadius">—</b><span>max radius</span></div>
+      <div><b id="mCenters">0/0</b><span>centers placed</span></div>
+      <div><b id="mDropped">0</b><span>points dropped</span></div>
+      <div><b id="mTime">—</b><span>compute time</span></div>
+      <div><b id="mTris">—</b><span>triangles</span></div>
+    </div>
+  </div>
+
+  <div class="rail">
+    <section>
+      <h2>Point set</h2>
+      <div class="chips" id="dsChips"></div>
+      <label class="row"><span>points n</span><output id="oN">400</output></label>
+      <input type="range" id="sN" min="60" max="800" step="20" value="400">
+      <label class="row"><span>centers k</span><output id="oK">6</output></label>
+      <input type="range" id="sK" min="2" max="12" step="1" value="6">
+    </section>
+
+    <section>
+      <h2>First center</h2>
+      <select id="seedSel">
+        <option value="random">random (the default)</option>
+        <option value="centroid">centroid-nearest</option>
+        <option value="extreme">farthest-from-centroid</option>
+        <option value="density" selected>delaunay-density</option>
+        <option value="mst">delaunay-MST centre</option>
+        <option value="lec">largest-empty-circle</option>
+      </select>
+    </section>
+
+    <section>
+      <h2>Outliers</h2>
+      <div class="chips" id="outChips"></div>
+      <div id="zBox" hidden>
+        <label class="row"><span>z, points to abandon</span><output id="oZ">8</output></label>
+        <input type="range" id="sZ" min="0" max="40" step="1" value="8">
+      </div>
+      <div id="tBox" hidden>
+        <label class="row"><span>MAD threshold</span><output id="oT">8.0</output></label>
+        <input type="range" id="sT" min="2" max="16" step="0.5" value="8">
+      </div>
+    </section>
+
+    <section>
+      <h2>Layers</h2>
+      <div class="toggles">
+        <label><input type="checkbox" id="cMesh"> Delaunay</label>
+        <label><input type="checkbox" id="cVor" checked> Voronoi</label>
+        <label><input type="checkbox" id="cCirc" checked> circles</label>
+        <label><input type="checkbox" id="cMst"> MST</label>
+        <label><input type="checkbox" id="cCc"> circumcentres</label>
+        <label><input type="checkbox" id="cIds"> point ids</label>
+      </div>
+    </section>
+
+    <section>
+      <div class="actions">
+        <button class="btn" id="bStep">Step</button>
+        <button class="btn primary" id="bRun">Run to k</button>
+        <button class="btn" id="bReset">Reset</button>
+        <button class="btn" id="bNew">New data</button>
+        <button class="btn wide" id="bMulti">Multi-start &times;25, keep the best</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Step log</h2>
+      <div id="log"><p class="m">Press Step to place the first center.</p></div>
+    </section>
+  </div>
+</div>
+
+<div class="notes">
+  <h2>What each piece costs</h2>
+  <p>The triangulation is built once and then answers three separate questions, each of
+     which would otherwise need its own O(n²) pass. Highlighted rows are what this
+     simulator is running.</p>
+  <table>
+    <thead><tr><th>Step</th><th>Method</th><th>Time</th><th>Guarantee</th></tr></thead>
+    <tbody>
+      <tr class="hi"><td>Place k centers</td><td>Gonzalez farthest-point</td><td class="cx">O(nk)</td><td>2&times; optimal</td></tr>
+      <tr><td>Place k centers</td><td>Hochbaum&ndash;Shmoys pruning</td><td class="cx">O(n² log n)</td><td>2&times; optimal</td></tr>
+      <tr><td>Place k centers</td><td>Multi-start &times;m</td><td class="cx">O(mnk)</td><td>2&times; optimal</td></tr>
+      <tr><td>Place k centers</td><td>Exhaustive search</td><td class="cx">O(C(n,k)&middot;nk)</td><td>exact</td></tr>
+      <tr class="hi"><td>Triangulate</td><td>Bowyer&ndash;Watson, naive location</td><td class="cx">O(n²) here, O(n log n) with Qhull</td><td>exact</td></tr>
+      <tr class="hi"><td>Seed: MST centre</td><td>MST from Delaunay edges + double sweep</td><td class="cx">O(n log n)</td><td>&mdash;</td></tr>
+      <tr><td>Seed: MST centre</td><td>Dense matrix + all-pairs</td><td class="cx">O(n²)</td><td>&mdash;</td></tr>
+      <tr class="hi"><td>Detect outliers</td><td>1-NN distance from the mesh, MAD</td><td class="cx">O(n)</td><td>&mdash;</td></tr>
+      <tr class="hi"><td>Coverage regions</td><td>Voronoi = Delaunay dual</td><td class="cx">O(n log n)</td><td>exact</td></tr>
+      <tr><td>Outliers, with proof</td><td>Charikar greedy</td><td class="cx">O(n²k log n)</td><td>3&times; optimal</td></tr>
+    </tbody>
+  </table>
+  <div class="legend">
+    <span><i style="background:#1B2A2F;border-radius:50%"></i>chosen center</span>
+    <span><i style="border:1.5px dashed #C3352B"></i>coverage radius</span>
+    <span><i style="border:1.5px solid #D98A1F;transform:rotate(45deg)"></i>dropped as outlier</span>
+    <span><i style="background:#7D8B8A"></i>Delaunay edge</span>
+    <span><i style="background:#2F6F5E"></i>MST edge</span>
+  </div>
+</div>
+
+</div>
+
+<script>
+'use strict';
+
+/* ==========================================================================
+   1.  Seeded RNG, so a run shown in a viva can be reproduced exactly
+   ========================================================================== */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+let rnd = mulberry32(7);
+function gauss(){let u=0,v=0;while(!u)u=rnd();while(!v)v=rnd();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+/* ==========================================================================
+   2.  Datasets.  W/H are the logical map, matching the canvas.
+   ========================================================================== */
+const W=760,H=560,PAD=34;
+function dsUniform(n){const p=[];for(let i=0;i<n;i++)
+  p.push([PAD+rnd()*(W-2*PAD),PAD+rnd()*(H-2*PAD)]);return{pts:p,truth:new Array(n).fill(false)};}
+function dsClustered(n,c=7,sd=22){
+  const cs=[];for(let i=0;i<c;i++)cs.push([PAD+60+rnd()*(W-2*PAD-120),PAD+50+rnd()*(H-2*PAD-100)]);
+  const p=[];for(let i=0;i<n;i++){const q=cs[i%c];
+    p.push([q[0]+gauss()*sd,q[1]+gauss()*sd]);}
+  return{pts:p,truth:new Array(n).fill(false)};}
+function dsOutliers(n){
+  const m=Math.max(8,Math.round(n*0.025)), base=dsClustered(n-m,6,20);
+  const truth=base.truth.slice();
+  for(let i=0;i<m;i++){base.pts.push([rnd()*W,rnd()*H]);truth.push(true);}
+  return{pts:base.pts,truth};}
+function dsMoons(n){
+  const p=[],h=Math.floor(n/2);
+  for(let i=0;i<h;i++){const t=Math.PI*i/h;
+    p.push([W/2-150+190*Math.cos(t)+gauss()*10, H/2+40-150*Math.sin(t)+gauss()*10]);}
+  for(let i=0;i<n-h;i++){const t=Math.PI*i/(n-h);
+    p.push([W/2+10+190*Math.cos(t)+gauss()*10, H/2-40+150*Math.sin(t)+gauss()*10]);}
+  return{pts:p,truth:new Array(n).fill(false)};}
+function dsHole(n){
+  const p=[],cx=W*0.6,cy=H*0.45,r=125;
+  while(p.length<n){const x=PAD+rnd()*(W-2*PAD),y=PAD+rnd()*(H-2*PAD);
+    if(Math.hypot(x-cx,y-cy)<r)continue;p.push([x,y]);}
+  return{pts:p,truth:new Array(n).fill(false)};}
+const DATASETS={
+  'clustered':dsClustered,'uniform':dsUniform,'clustered + outliers':dsOutliers,
+  'two moons':dsMoons,'field + hole':dsHole
+};
+
+/* ==========================================================================
+   3.  Delaunay triangulation — Bowyer–Watson incremental insertion.
+       Point location here is a naive scan of every triangle, so this is
+       O(n^2). Qhull (used by the Python side) gets O(n log n); at n <= 800
+       in a browser the difference is a few milliseconds and the code stays
+       readable, which is the trade made on purpose.
+   ========================================================================== */
+function orient(P,a,b,c){ // >0 when a,b,c turn counter-clockwise
+  return (P[b][0]-P[a][0])*(P[c][1]-P[a][1])-(P[b][1]-P[a][1])*(P[c][0]-P[a][0]);
+}
+function mkTri(P,a,b,c){ return orient(P,a,b,c)>0?[a,b,c]:[a,c,b]; }
+function inCircum(P,p,t){ // t counter-clockwise; true if p is strictly inside
+  const ax=P[t[0]][0]-P[p][0],ay=P[t[0]][1]-P[p][1];
+  const bx=P[t[1]][0]-P[p][0],by=P[t[1]][1]-P[p][1];
+  const cx=P[t[2]][0]-P[p][0],cy=P[t[2]][1]-P[p][1];
+  return (ax*ax+ay*ay)*(bx*cy-by*cx)
+       - (bx*bx+by*by)*(ax*cy-ay*cx)
+       + (cx*cx+cy*cy)*(ax*by-ay*bx) > 0;
+}
+function delaunay(pts){
+  const n=pts.length;
+  if(n<3) return {tris:[],P:pts};
+  let mnx=Infinity,mny=Infinity,mxx=-Infinity,mxy=-Infinity;
+  for(const q of pts){mnx=Math.min(mnx,q[0]);mny=Math.min(mny,q[1]);
+                      mxx=Math.max(mxx,q[0]);mxy=Math.max(mxy,q[1]);}
+  const dm=Math.max(mxx-mnx,mxy-mny)||1, mx=(mnx+mxx)/2, my=(mny+mxy)/2;
+  // super-triangle, big enough to contain everything; removed at the end
+  const P=pts.concat([[mx-20*dm,my-dm],[mx,my+20*dm],[mx+20*dm,my-dm]]);
+  let tris=[mkTri(P,n,n+1,n+2)];
+
+  for(let i=0;i<n;i++){
+    const keep=[],cnt=new Map();
+    for(const t of tris){
+      if(inCircum(P,i,t)){ // t's circumcircle swallows the new point -> retriangulate
+        for(const e of [[t[0],t[1]],[t[1],t[2]],[t[2],t[0]]]){
+          const key=e[0]<e[1]?e[0]+','+e[1]:e[1]+','+e[0];
+          cnt.set(key,(cnt.get(key)||0)+1);
+        }
+      } else keep.push(t);
+    }
+    // edges seen once are the boundary of the cavity; stitch them to the new point
+    for(const [key,c] of cnt){ if(c===1){ const [a,b]=key.split(',');
+      keep.push(mkTri(P,+a,+b,i)); } }
+    tris=keep;
+  }
+  return {tris:tris.filter(t=>t[0]<n&&t[1]<n&&t[2]<n),P:pts};
+}
+
+/* Derived structures: unique edges, adjacency, per-point 1-NN and mean edge. */
+function meshOf(pts){
+  const {tris}=delaunay(pts), n=pts.length;
+  const seen=new Set(), edges=[], nbr=Array.from({length:n},()=>[]);
+  const minE=new Float64Array(n).fill(Infinity), sumE=new Float64Array(n),
+        cntE=new Float64Array(n);
+  for(const t of tris){
+    for(const e of [[t[0],t[1]],[t[1],t[2]],[t[2],t[0]]]){
+      const a=Math.min(e[0],e[1]),b=Math.max(e[0],e[1]),key=a+','+b;
+      if(seen.has(key))continue; seen.add(key);
+      const L=Math.hypot(pts[a][0]-pts[b][0],pts[a][1]-pts[b][1]);
+      edges.push([a,b,L]); nbr[a].push(b); nbr[b].push(a);
+      minE[a]=Math.min(minE[a],L); minE[b]=Math.min(minE[b],L);
+      sumE[a]+=L; sumE[b]+=L; cntE[a]++; cntE[b]++;
+    }
+  }
+  const meanE=new Float64Array(n);
+  for(let i=0;i<n;i++){meanE[i]=cntE[i]?sumE[i]/cntE[i]:0;
+                       if(!isFinite(minE[i]))minE[i]=0;}
+  return {tris,edges,nbr,minE,meanE,n};
+}
+
+/* Euclidean MST: Kruskal over Delaunay edges only.  The EMST is a subgraph of
+   the Delaunay triangulation, so ~3n edges are enough — never all n(n-1)/2. */
+function emst(mesh){
+  const es=mesh.edges.slice().sort((a,b)=>a[2]-b[2]);
+  const par=new Int32Array(mesh.n).map((_,i)=>i);
+  const find=a=>{while(par[a]!==a){par[a]=par[par[a]];a=par[a];}return a;};
+  const out=[];
+  for(const [a,b,L] of es){
+    const ra=find(a),rb=find(b);
+    if(ra!==rb){par[rb]=ra;out.push([a,b,L]);if(out.length===mesh.n-1)break;}
+  }
+  return out;
+}
+/* Weighted tree centre by double sweep: O(n), no all-pairs shortest path. */
+function treeCentre(n,tree){
+  const adj=Array.from({length:n},()=>[]);
+  for(const [a,b,L] of tree){adj[a].push([b,L]);adj[b].push([a,L]);}
+  const sweep=s=>{const d=new Float64Array(n).fill(-1),par=new Int32Array(n).fill(-1);
+    d[s]=0;const st=[s];
+    while(st.length){const u=st.pop();
+      for(const [v,L] of adj[u]) if(d[v]<0){d[v]=d[u]+L;par[v]=u;st.push(v);}}
+    return {d,par};};
+  let {d:d0}=sweep(0); let u=0; for(let i=0;i<n;i++) if(d0[i]>d0[u])u=i;
+  const {d:du,par}=sweep(u); let v=0; for(let i=0;i<n;i++) if(du[i]>du[v])v=i;
+  const {d:dv}=sweep(v);
+  let best=v,bv=Infinity,cur=v;
+  while(cur!==-1){const m=Math.max(du[cur],dv[cur]);if(m<bv){bv=m;best=cur;}cur=par[cur];}
+  return best;
+}
+/* Circumcentres = the vertices of the Voronoi diagram (the duality, used directly). */
+function circumcentres(pts,tris){
+  const out=[];
+  for(const t of tris){
+    const [a,b,c]=t.map(i=>pts[i]);
+    const d=2*(a[0]*(b[1]-c[1])+b[0]*(c[1]-a[1])+c[0]*(a[1]-b[1]));
+    if(Math.abs(d)<1e-9)continue;
+    const a2=a[0]*a[0]+a[1]*a[1],b2=b[0]*b[0]+b[1]*b[1],c2=c[0]*c[0]+c[1]*c[1];
+    const x=(a2*(b[1]-c[1])+b2*(c[1]-a[1])+c2*(a[1]-b[1]))/d;
+    const y=(a2*(c[0]-b[0])+b2*(a[0]-c[0])+c2*(b[0]-a[0]))/d;
+    out.push([x,y,Math.hypot(x-a[0],y-a[1])]);
+  }
+  return out;
+}
+
+/* ==========================================================================
+   4.  Outlier score: the point's own 1-NN distance, MAD-normalised.
+       Read straight off the mesh because the Delaunay graph contains the
+       nearest-neighbour graph, so the shortest incident edge IS the 1-NN
+       distance. Using the MINIMUM rather than the mean is what stops points
+       on the rim of a cluster being flagged.
+   ========================================================================== */
+function median(a){const s=Float64Array.from(a).sort();const m=s.length>>1;
+  return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function outlierScores(mesh){
+  const raw=mesh.minE, med=median(raw);
+  const mad=median(Array.from(raw,v=>Math.abs(v-med)));
+  let sc=1.4826*mad;
+  if(sc<1e-9){let mean=0;for(const v of raw)mean+=v;mean/=raw.length;
+    let sd=0;for(const v of raw)sd+=(v-mean)**2;sc=Math.sqrt(sd/raw.length)||1;}
+  return Array.from(raw,v=>(v-med)/sc);
+}
+
+/* ==========================================================================
+   5.  Seeding strategies
+   ========================================================================== */
+function seedFirst(mode,pts,mesh){
+  const n=pts.length;
+  if(mode==='random') return Math.floor(rnd()*n);
+  let cx=0,cy=0; for(const q of pts){cx+=q[0];cy+=q[1];} cx/=n; cy/=n;
+  if(mode==='centroid'||mode==='extreme'){
+    let bi=0,bv=mode==='centroid'?Infinity:-Infinity;
+    for(let i=0;i<n;i++){const d=Math.hypot(pts[i][0]-cx,pts[i][1]-cy);
+      if(mode==='centroid'?d<bv:d>bv){bv=d;bi=i;}}
+    return bi;
+  }
+  if(mode==='density'){let bi=0;for(let i=1;i<n;i++)
+    if(mesh.meanE[i]<mesh.meanE[bi])bi=i;return bi;}
+  if(mode==='mst') return treeCentre(n,emst(mesh));
+  if(mode==='lec'){
+    const cc=circumcentres(pts,mesh.tris);
+    if(!cc.length)return 0;
+    let b=cc[0];for(const c of cc)if(c[2]>b[2])b=c;
+    let bi=0,bv=Infinity;
+    for(let i=0;i<n;i++){const d=Math.hypot(pts[i][0]-b[0],pts[i][1]-b[1]);
+      if(d<bv){bv=d;bi=i;}}
+    return bi;
+  }
+  return 0;
+}
+
+/* ==========================================================================
+   6.  Application state and the greedy algorithm itself
+   ========================================================================== */
+const S={
+  dataset:'clustered', n:400, k:6, seedMode:'density',
+  outMode:'none', z:8, thr:8,
+  pts:[], truth:[], mesh:null, scores:[], flagged:[],
+  centers:[], dmin:null, radius:null, ms:0, steps:[], active:[]
+};
+
+function activeSet(){
+  // which point indices the algorithm is allowed to choose from
+  if(S.outMode==='filter'){
+    const keep=[];for(let i=0;i<S.pts.length;i++)if(!S.flagged[i])keep.push(i);
+    return keep.length>=S.k?keep:S.pts.map((_,i)=>i);
+  }
+  return S.pts.map((_,i)=>i);
+}
+
+function regenerate(newSeed){
+  if(newSeed!==false) rnd=mulberry32(Math.floor(Math.random()*1e9));
+  const d=DATASETS[S.dataset](S.n);
+  S.pts=d.pts; S.truth=d.truth;
+  const t0=performance.now();
+  S.mesh=meshOf(S.pts);
+  S.meshMs=performance.now()-t0;
+  S.scores=outlierScores(S.mesh);
+  recomputeFlags();
+  resetRun();
+}
+function recomputeFlags(){
+  S.flagged=S.outMode==='filter'?S.scores.map(v=>v>S.thr):S.pts.map(()=>false);
+}
+function resetRun(){
+  S.centers=[];S.dmin=null;S.radius=null;S.ms=0;S.steps=[];
+  S.active=activeSet();
+  log(null);
+  draw();updateReadout();
+}
+
+function stepOnce(){
+  if(S.centers.length>=S.k) return false;
+  const t0=performance.now();
+  const A=S.active, pts=S.pts;
+  let chosen, note;
+
+  if(S.centers.length===0){
+    // seeding rule picks the first center; everything after is forced
+    let g=seedFirst(S.seedMode,pts,S.mesh);
+    if(S.outMode==='filter'&&S.flagged[g]) g=A[0];
+    chosen=g; note='seeded by '+S.seedMode;
+    S.dmin=new Float64Array(pts.length).fill(Infinity);
+  }else{
+    // the farthest point from every center so far — the greedy rule
+    let bi=-1,bv=-Infinity;
+    if(S.outMode==='robust'){
+      // take the (z+1)-th farthest instead of the farthest
+      const cand=A.map(i=>[i,S.dmin[i]]).sort((a,b)=>b[1]-a[1]);
+      const pick=cand[Math.min(S.z,cand.length-1)];
+      bi=pick[0];bv=pick[1];
+      note='(z+1)-th farthest, skipping '+S.z;
+    }else{
+      for(const i of A) if(S.dmin[i]>bv){bv=S.dmin[i];bi=i;}
+      note='farthest point, was '+bv.toFixed(1)+' away';
+    }
+    chosen=bi;
+  }
+
+  S.centers.push(chosen);
+  const cxy=pts[chosen];
+  for(const i of A){
+    const d=Math.hypot(pts[i][0]-cxy[0],pts[i][1]-cxy[1]);
+    if(d<S.dmin[i])S.dmin[i]=d;
+  }
+  let r=0; for(const i of A) if(S.dmin[i]>r)r=S.dmin[i];
+  if(S.outMode==='robust'){
+    const s=A.map(i=>S.dmin[i]).sort((a,b)=>b-a);
+    r=s[Math.min(S.z,s.length-1)];
+  }
+  S.radius=r;
+  S.ms+=performance.now()-t0;
+  S.steps.push({i:S.centers.length,pt:chosen,r,note});
+  log(S.steps[S.steps.length-1]);
+  draw();updateReadout();
+  return true;
+}
+function runAll(){ let guard=0; while(stepOnce()&&guard++<200){} }
+
+function multiStart(m=25){
+  const A=activeSet(),pts=S.pts;
+  const t0=performance.now();
+  let best=null;
+  for(let t=0;t<m;t++){
+    const first=A[Math.floor(rnd()*A.length)];
+    const dm=new Float64Array(pts.length).fill(Infinity);
+    const cs=[first];
+    for(const i of A) dm[i]=Math.hypot(pts[i][0]-pts[first][0],pts[i][1]-pts[first][1]);
+    for(let s=1;s<S.k;s++){
+      let bi=-1,bv=-Infinity;
+      for(const i of A) if(dm[i]>bv){bv=dm[i];bi=i;}
+      cs.push(bi);
+      for(const i of A){const d=Math.hypot(pts[i][0]-pts[bi][0],pts[i][1]-pts[bi][1]);
+        if(d<dm[i])dm[i]=d;}
+    }
+    let r=0;for(const i of A) if(dm[i]>r)r=dm[i];
+    if(!best||r<best.r)best={r,cs,dm};
+  }
+  const ms=performance.now()-t0;
+  const before=S.radius;
+  S.centers=best.cs;S.dmin=best.dm;S.radius=best.r;S.ms=ms;
+  S.steps=[];
+  log(null);
+  logRaw('multi-start x'+m+' -> radius '+best.r.toFixed(1)+
+        (before?'  (single run was '+before.toFixed(1)+')':''),'c');
+  logRaw('cost O(mnk), same 2x guarantee','m');
+  draw();updateReadout();
+}
+
+/* ==========================================================================
+   7.  Rendering
+   ========================================================================== */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const REG=document.createElement('canvas');
+const HUES=['#3E6E8E','#4F8A6B','#9A6A3F','#7A5C97','#2F6F5E','#A0524D',
+            '#516B8B','#6E8B3D','#8A5A7A','#3F7C86','#95793C','#5D5F9E'];
+
+function fitCanvas(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=cv.clientWidth||W, h=w*H/W;
+  cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+  cv.style.height=h+'px';
+  ctx.setTransform(dpr*w/W,0,0,dpr*w/W,0,0); // draw in logical W x H units
+}
+
+function drawRegions(){
+  // Voronoi regions, computed as nearest-center per pixel on a half-res buffer.
+  // This IS the Voronoi diagram of the centers, already clipped to the map.
+  const rw=Math.round(W/2),rh=Math.round(H/2);
+  REG.width=rw;REG.height=rh;
+  const rc=REG.getContext('2d'), img=rc.createImageData(rw,rh), D=img.data;
+  const cs=S.centers.map(i=>S.pts[i]);
+  const owner=new Int16Array(rw*rh);
+  for(let y=0;y<rh;y++){
+    const py=y*2;
+    for(let x=0;x<rw;x++){
+      const px=x*2; let bi=0,bv=Infinity;
+      for(let c=0;c<cs.length;c++){
+        const dx=px-cs[c][0],dy=py-cs[c][1],d=dx*dx+dy*dy;
+        if(d<bv){bv=d;bi=c;}
+      }
+      owner[y*rw+x]=bi;
+      const col=HUES[bi%HUES.length];
+      const o=(y*rw+x)*4;
+      D[o]=parseInt(col.slice(1,3),16);D[o+1]=parseInt(col.slice(3,5),16);
+      D[o+2]=parseInt(col.slice(5,7),16);D[o+3]=42;
+    }
+  }
+  // darken region boundaries so the diagram reads as a diagram, not a wash
+  for(let y=1;y<rh;y++)for(let x=1;x<rw;x++){
+    const i=y*rw+x;
+    if(owner[i]!==owner[i-1]||owner[i]!==owner[i-rw]){
+      const o=i*4;D[o]=27;D[o+1]=42;D[o+2]=47;D[o+3]=205;
+    }
+  }
+  rc.putImageData(img,0,0);
+  ctx.drawImage(REG,0,0,W,H);
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#F7F8F5';ctx.fillRect(0,0,W,H);
+
+  if(S.centers.length&&document.getElementById('cVor').checked) drawRegions();
+
+  if(document.getElementById('cMesh').checked&&S.mesh){
+    ctx.strokeStyle='rgba(125,139,138,.42)';ctx.lineWidth=.5;ctx.beginPath();
+    for(const [a,b] of S.mesh.edges){
+      ctx.moveTo(S.pts[a][0],S.pts[a][1]);ctx.lineTo(S.pts[b][0],S.pts[b][1]);}
+    ctx.stroke();
+  }
+  if(document.getElementById('cMst').checked&&S.mesh){
+    ctx.strokeStyle='rgba(47,111,94,.85)';ctx.lineWidth=1.1;ctx.beginPath();
+    for(const [a,b] of emst(S.mesh)){
+      ctx.moveTo(S.pts[a][0],S.pts[a][1]);ctx.lineTo(S.pts[b][0],S.pts[b][1]);}
+    ctx.stroke();
+  }
+  if(document.getElementById('cCc').checked&&S.mesh){
+    ctx.fillStyle='rgba(217,138,31,.85)';
+    for(const [x,y] of circumcentres(S.pts,S.mesh.tris)){
+      if(x<-50||x>W+50||y<-50||y>H+50)continue;
+      ctx.fillRect(x-1.2,y-1.2,2.4,2.4);}
+  }
+
+  // points, coloured by serving center
+  const showIds=document.getElementById('cIds').checked;
+  for(let i=0;i<S.pts.length;i++){
+    const [x,y]=S.pts[i];
+    if(S.flagged[i]){
+      ctx.strokeStyle='#D98A1F';ctx.lineWidth=1.4;
+      ctx.beginPath();ctx.moveTo(x,y-4.4);ctx.lineTo(x+4.4,y);
+      ctx.lineTo(x,y+4.4);ctx.lineTo(x-4.4,y);ctx.closePath();ctx.stroke();
+      continue;
+    }
+    let col='#8FA0A3';
+    if(S.centers.length){
+      let bi=0,bv=Infinity;
+      for(let c=0;c<S.centers.length;c++){
+        const q=S.pts[S.centers[c]],d=(x-q[0])**2+(y-q[1])**2;
+        if(d<bv){bv=d;bi=c;}}
+      col=HUES[bi%HUES.length];
+    }
+    ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,y,2.3,0,6.2832);ctx.fill();
+    if(showIds&&i%10===0){ctx.fillStyle='rgba(27,42,47,.5)';ctx.font='8px monospace';
+      ctx.fillText(i,x+4,y-3);}
+  }
+
+  // coverage circles — the radius being minimised
+  if(S.radius&&document.getElementById('cCirc').checked){
+    ctx.strokeStyle='rgba(195,53,43,.8)';ctx.lineWidth=1.1;ctx.setLineDash([5,4]);
+    for(const c of S.centers){ctx.beginPath();
+      ctx.arc(S.pts[c][0],S.pts[c][1],S.radius,0,6.2832);ctx.stroke();}
+    ctx.setLineDash([]);
+  }
+
+  // centers, drawn last so nothing covers them
+  S.centers.forEach((c,idx)=>{
+    const [x,y]=S.pts[c];
+    ctx.beginPath();ctx.arc(x,y,7.5,0,6.2832);
+    ctx.fillStyle='#fff';ctx.fill();
+    ctx.fillStyle='#1B2A2F';ctx.beginPath();ctx.arc(x,y,5.6,0,6.2832);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='600 8px '+getComputedStyle(document.body).fontFamily;
+    ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(idx+1,x,y+.5);
+    ctx.textAlign='start';ctx.textBaseline='alphabetic';
+  });
+}
+
+/* ==========================================================================
+   8.  Readout + log
+   ========================================================================== */
+function updateReadout(){
+  document.getElementById('mRadius').textContent=S.radius?S.radius.toFixed(1):'—';
+  document.getElementById('mCenters').textContent=S.centers.length+'/'+S.k;
+  const dropped=S.outMode==='filter'?S.flagged.filter(Boolean).length
+               :S.outMode==='robust'?S.z:0;
+  document.getElementById('mDropped').textContent=dropped;
+  document.getElementById('mTime').textContent=S.ms?S.ms.toFixed(1)+' ms':'—';
+  document.getElementById('mTris').textContent=S.mesh?S.mesh.tris.length:'—';
+}
+const logEl=document.getElementById('log');
+function logRaw(text,cls){const p=document.createElement('p');
+  if(cls)p.className=cls;p.textContent=text;logEl.appendChild(p);
+  logEl.scrollTop=logEl.scrollHeight;}
+function log(step){
+  if(step===null){logEl.innerHTML='';
+    logRaw('n='+S.pts.length+'  k='+S.k+'  mesh '+(S.mesh?S.mesh.tris.length:0)+
+           ' triangles in '+(S.meshMs||0).toFixed(1)+' ms','m');
+    if(S.outMode==='filter')
+      logRaw('filter flagged '+S.flagged.filter(Boolean).length+
+             ' points above '+S.thr.toFixed(1)+' MAD','m');
+    return;}
+  logRaw('center '+step.i+'  <- point #'+step.pt+'   R='+step.r.toFixed(1),'c');
+  logRaw('   '+step.note,'m');
+}
+
+/* ==========================================================================
+   9.  Controls
+   ========================================================================== */
+function chipRow(el,items,current,onPick){
+  el.innerHTML='';
+  items.forEach(([val,label])=>{
+    const b=document.createElement('button');
+    b.className='chip';b.textContent=label;b.type='button';
+    b.setAttribute('aria-pressed',String(val===current()));
+    b.onclick=()=>{onPick(val);
+      [...el.children].forEach(c=>c.setAttribute('aria-pressed',
+        String(c.textContent===label)));};
+    el.appendChild(b);
+  });
+}
+chipRow(document.getElementById('dsChips'),
+  Object.keys(DATASETS).map(k=>[k,k]), ()=>S.dataset,
+  v=>{S.dataset=v;regenerate();});
+chipRow(document.getElementById('outChips'),
+  [['none','none'],['robust','robust (knows z)'],['filter','Delaunay filter']],
+  ()=>S.outMode,
+  v=>{S.outMode=v;
+      document.getElementById('zBox').hidden=v!=='robust';
+      document.getElementById('tBox').hidden=v!=='filter';
+      recomputeFlags();resetRun();});
+
+function bindRange(id,out,key,fmt,after){
+  const s=document.getElementById(id),o=document.getElementById(out);
+  s.addEventListener('input',()=>{S[key]=parseFloat(s.value);
+    o.textContent=fmt?fmt(S[key]):S[key];after&&after();});
+}
+bindRange('sN','oN','n',null,()=>regenerate(false));
+bindRange('sK','oK','k',null,()=>resetRun());
+bindRange('sZ','oZ','z',null,()=>resetRun());
+bindRange('sT','oT','thr',v=>v.toFixed(1),()=>{recomputeFlags();resetRun();});
+
+document.getElementById('seedSel').addEventListener('change',e=>{
+  S.seedMode=e.target.value;resetRun();});
+document.getElementById('bStep').onclick=()=>stepOnce();
+document.getElementById('bRun').onclick=()=>runAll();
+document.getElementById('bReset').onclick=()=>resetRun();
+document.getElementById('bNew').onclick=()=>regenerate(true);
+document.getElementById('bMulti').onclick=()=>multiStart(25);
+['cMesh','cVor','cCirc','cMst','cCc','cIds'].forEach(id=>
+  document.getElementById(id).addEventListener('change',draw));
+
+// click the map to add a point and rebuild the triangulation
+cv.addEventListener('click',ev=>{
+  const r=cv.getBoundingClientRect();
+  const x=(ev.clientX-r.left)*W/r.width, y=(ev.clientY-r.top)*H/r.height;
+  S.pts.push([x,y]);S.truth.push(false);
+  S.mesh=meshOf(S.pts);S.scores=outlierScores(S.mesh);recomputeFlags();
+  resetRun();
+});
+
+window.addEventListener('resize',()=>{fitCanvas();draw();});
+fitCanvas();
+regenerate(false);
+</script>
+</body>
+</html>

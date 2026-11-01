@@ -1,0 +1,41 @@
+dataset,strategy,mean_radius,std,instances
+uniform,densest-kdtree,51.9469,0.0,1
+uniform,multi-start x25,51.9469,0.0,1
+uniform,centroid-nearest,61.4529,0.0,1
+uniform,delaunay-mst-center,66.0699,0.0,1
+uniform,random,78.9449,0.0,1
+uniform,delaunay-density,81.6609,0.0,1
+uniform,farthest-from-centroid,84.8486,0.0,1
+uniform,largest-empty-circle,84.8486,0.0,1
+clustered,multi-start x25,32.0696,0.0,1
+clustered,random,33.7233,0.0,1
+clustered,densest-kdtree,33.7233,0.0,1
+clustered,delaunay-density,33.7233,0.0,1
+clustered,farthest-from-centroid,35.7116,0.0,1
+clustered,largest-empty-circle,35.7116,0.0,1
+clustered,centroid-nearest,36.8296,0.0,1
+clustered,delaunay-mst-center,36.8296,0.0,1
+clustered+outliers,centroid-nearest,64.1931,0.0,1
+clustered+outliers,multi-start x25,64.1931,0.0,1
+clustered+outliers,densest-kdtree,71.9882,0.0,1
+clustered+outliers,delaunay-density,72.1062,0.0,1
+clustered+outliers,largest-empty-circle,72.6401,0.0,1
+clustered+outliers,delaunay-mst-center,74.8663,0.0,1
+clustered+outliers,random,76.2955,0.0,1
+clustered+outliers,farthest-from-centroid,89.746,0.0,1
+two-moons,delaunay-mst-center,55.1291,0.0,1
+two-moons,multi-start x25,55.4744,0.0,1
+two-moons,largest-empty-circle,55.9224,0.0,1
+two-moons,delaunay-density,56.1011,0.0,1
+two-moons,densest-kdtree,57.5954,0.0,1
+two-moons,centroid-nearest,59.2145,0.0,1
+two-moons,random,59.4676,0.0,1
+two-moons,farthest-from-centroid,74.8871,0.0,1
+field+hole,multi-start x25,52.0462,0.0,1
+field+hole,random,59.9424,0.0,1
+field+hole,delaunay-mst-center,60.6939,0.0,1
+field+hole,largest-empty-circle,61.9613,0.0,1
+field+hole,centroid-nearest,66.0612,0.0,1
+field+hole,densest-kdtree,80.1914,0.0,1
+field+hole,delaunay-density,81.6609,0.0,1
+field+hole,farthest-from-centroid,84.8486,0.0,1
